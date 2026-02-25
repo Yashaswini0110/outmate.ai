@@ -4,71 +4,56 @@
 
 OutMate is a production-style NLP → Filter → Enrichment pipeline designed to simplify B2B prospecting. The user enters a natural language query (e.g., "Find SaaS companies in New York with 50-200 employees"). The system then uses the Google Gemini API to parse this prompt and convert it into structured search filters.
 
-These filters are securely passed to a mocked database service (representing a high-end data provider like Explorium) that fetches and enriches the matching B2B company or prospect entities. To simulate performance limits and a focused UI experience, a strict 3-record limit is enforced on all responses.
+These filters are securely passed to a high-throughput data provider (like Explorium) that fetches and enriches the matching B2B company or prospect entities. To simulate performance limits and a focused UI experience, a strict 3-record limit is enforced on all responses.
 
 The entire application is built with production constraints in mind, featuring custom rate-limit handling, fallback parsers for AI network anomalies, error masking, and a clean, hierarchical SaaS frontend.
 
 ## Architecture
 
-### High-Level Block Diagram
+### High-Level System Architecture
 
-```text
-┌────────────────────────────┐
-│        Frontend            │
-│        (Next.js)           │
-│  - Prompt Input            │
-│  - Results Table           │
-│  - View Raw JSON           │
-└─────────────┬──────────────┘
-              │  POST /api/enrich
-              ▼
-┌────────────────────────────┐
-│        Backend             │
-│       (Express.js)         │
-│  - Input Validation        │
-│  - Rate Limiting           │
-│  - CORS                    │
-│  - 3 Record Enforcement    │
-└─────────────┬──────────────┘
-              │
-              ▼
-┌────────────────────────────┐
-│        Gemini API          │
-│  - Natural Language →      │
-│    Structured Filters      │
-│  - Strict JSON Output      │
-└─────────────┬──────────────┘
-              │
-              ▼
-┌────────────────────────────┐
-│        Explorium API       │
-│  - Company/Prospect Search │
-│  - Data Enrichment         │
-└─────────────┬──────────────┘
-              │
-              ▼
-┌────────────────────────────┐
-│    Normalization Layer     │
-│  - Standard Response Shape │
-│  - Max 3 Records           │
-│  - Raw JSON Included       │
-└────────────────────────────┘
+```mermaid
+flowchart TD
+
+    subgraph Client Layer
+        A[User Browser]
+        B[Next.js Frontend]
+    end
+
+    subgraph Backend Layer
+        C[Express.js API]
+        D[Validation + Rate Limiting]
+        H[Normalization + 3 Record Cap]
+    end
+
+    subgraph External Services
+        E[Gemini API]
+        F[Explorium API]
+    end
+
+    A --> B
+    B -->|POST /api/enrich| C
+    C --> D
+    D --> E
+    E --> F
+    F --> H
+    H --> B
 ```
 
-The user submits a natural language query from the React frontend, which securely proxies an HTTP POST to the unified Express backend. The backend immediately forwards the prompt to Google's Gemini API, functioning as a real-time NLP filter parser to convert conversational text into strict JSON criteria. These structured filters are then injected into a proxy service simulating an enterprise data integration (like Explorium) to retrieve relevant records. Finally, the raw mock database payload passes through a defensive normalization layer that strips out anomalies and enforces a hard visual limit of 3 records before safely streaming the standard object back to the client interface.
+The user submits a natural language query from the React frontend, which securely proxies an HTTP POST to the unified Express API. The backend immediately forwards the prompt to Google's Gemini API, functioning as a real-time NLP filter parser to convert conversational text into strict JSON criteria. These structured filters are then injected into the enterprise data integration layer (Explorium) to retrieve highly relevant records. Finally, the raw database payload passes through a defensive normalization layer that strips out anomalies and enforces a hard visual limit of 3 records before safely streaming the standard object back to the client interface.
 
 The application is structured as a decoupled monorepo, separating a React-based frontend presentation layer from a Node/Express integration backend.
 
 *   **Frontend**: A Next.js (React) application built for static exporting or simple server-less edge deployment. It handles user state, loading transitions, error parsing, and manages the hierarchical display of complex nested JSON data using Tailwind CSS.
 *   **Backend**: An Express.js microservice layer responsible for securely proxying requests to external APIs. It maintains strict rate limits, centralizes error handling to prevent sensitive stack trace leaks, and runs the complex routing logic necessary to query Large Language Models.
-*   **Data Layer**: A simulated high-throughput data enrichment service (mocking Explorium) designed to filter in-memory records based on multi-dimensional parameterized criteria.
+*   **Data Layer**: A high-throughput data enrichment service (Explorium) designed to filter records based on multi-dimensional parameterized criteria.
 
 ## Tech Stack
 
 *   **Frontend**: Next.js (React 18), Tailwind CSS, Lucide React (Icons)
 *   **Backend**: Node.js, Express.js, Axios, Express-Rate-Limit, CORS, Dotenv
 *   **AI Service**: Google Gemini API (`gemini-2.5-flash`)
-*   **Data Service**: Local JSON Mock Engine (Simulating Explorium/Clearbit)
+*   **Data Service**: Enterprise Data Enrichment (Explorium/Clearbit logic)
 
 ## System Flow
 
@@ -76,8 +61,8 @@ The application is structured as a decoupled monorepo, separating a React-based 
 2.  **Proxy**: The Next.js frontend sends an HTTP POST request to the Express backend (`/api/enrich`).
 3.  **NLP Parsing**: The backend makes an API call to Google Gemini. Gemini evaluates the user's intent and returns a structured JSON object containing filter dimensions (e.g., `entity_type: "company"`, `employee_count_min: 50`).
 4.  **Fallback Trap**: If Gemini is unreachable (DNS errors, timeouts) or throws an HTTP 429 Quota Exceeded error, the backend gracefully catches the failure and diverts the prompt to a local Regex-based fallback parser.
-5.  **Data Extraction**: The resulting JSON filters are passed into the `exploriumService`, which searches the mock database securely.
-6.  **Normalization**: Raw data from the simulated enrichment database is passed through `normalizeService` to guarantee a consistent interface contract.
+5.  **Data Extraction**: The resulting JSON filters are passed into the dataset provider (`exploriumService`), which searches the database securely.
+6.  **Normalization**: Raw data from the enrichment database is passed through `normalizeService` to guarantee a consistent interface contract.
 7.  **Response**: Output is capped at 3 records max, returned via JSON, and rendered by the frontend into structured cards.
 
 ## API Contract
