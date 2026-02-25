@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { parsePromptWithGemini } = require('../services/geminiService');
 const { fetchEnrichedData } = require('../services/exploriumService');
+const filterEngine = require('../services/filterEngine');
 const { normalizeResults } = require('../services/normalizeService');
 
 // POST /api/enrich
@@ -22,9 +23,13 @@ router.post('/', async (req, res, next) => {
         const entityType = parsed.entity_type;
         const filters = parsed.filters;
 
-        const rawResults = await fetchEnrichedData(entityType, filters);
+        const rawResults = await fetchEnrichedData(entityType);
 
-        const limitedResults = rawResults.slice(0, 3);
+        // 1. Pass raw API page through our deterministic local filter & ranking engine
+        const filteredResults = filterEngine.applyFilters(rawResults, filters);
+
+        // 2. Strict 3-record truncation applied to the filtered/ranked results natively
+        const limitedResults = filteredResults.slice(0, 3);
         const resultCount = limitedResults.length;
 
         const finalResponse = normalizeResults(entityType, limitedResults);

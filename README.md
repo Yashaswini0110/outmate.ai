@@ -17,30 +17,28 @@ flowchart TD
 
     subgraph Client Layer
         A[User Browser]
-        B[Next.js Frontend]
+        B[Next.js Frontend<br/>Prompt UI + Results Table]
     end
 
     subgraph Backend Layer
-        C[Express.js API]
-        D[Validation + Rate Limiting]
-        H[Normalization + 3 Record Cap]
-    end
-
-    subgraph External Services
-        E[Gemini API]
-        F[Explorium API]
+        C[Express.js API<br/>/api/enrich]
+        D[Gemini API<br/>Prompt → Structured JSON Filters]
+        E[Explorium API<br/>Paged Data Fetch]
+        F[Local Filtering & Ranking Engine]
+        G[Normalization + Max 3 Enforcement]
     end
 
     A --> B
     B -->|POST /api/enrich| C
     C --> D
-    D --> E
+    C --> E
+    D --> F
     E --> F
-    F --> H
-    H --> B
+    F --> G
+    G -->|JSON Response| B
 ```
 
-The user submits a natural language query from the React frontend, which securely proxies an HTTP POST to the unified Express API. The backend immediately forwards the prompt to Google's Gemini API, functioning as a real-time NLP filter parser to convert conversational text into strict JSON criteria. These structured filters are then injected into the enterprise data integration layer (Explorium) to retrieve highly relevant records. Finally, the raw database payload passes through a defensive normalization layer that strips out anomalies and enforces a hard visual limit of 3 records before safely streaming the standard object back to the client interface.
+The user submits a natural language query from the React frontend, which securely proxies an HTTP POST to the unified Express API. The backend immediately forwards the prompt to Google's Gemini API, functioning as a real-time NLP filter parser to convert conversational text into strict JSON criteria. The Express Server then asynchronously queries the enterprise data integration layer (Explorium) to retrieve a raw paginated database payload. This payload, along with the JSON criteria from Gemini, passes through a custom deterministic ranking service (`filterEngine.js`) where all semantic matching is applied cleanly inside the application bounds, ensuring optimal sorting. Finally, the sorted database payload passes through a defensive normalization layer that enforces a hard visual limit of 3 records before safely streaming the standard generic object back to the client interface.
 
 The application is structured as a decoupled monorepo, separating a React-based frontend presentation layer from a Node/Express integration backend.
 
@@ -61,9 +59,10 @@ The application is structured as a decoupled monorepo, separating a React-based 
 2.  **Proxy**: The Next.js frontend sends an HTTP POST request to the Express backend (`/api/enrich`).
 3.  **NLP Parsing**: The backend makes an API call to Google Gemini. Gemini evaluates the user's intent and returns a structured JSON object containing filter dimensions (e.g., `entity_type: "company"`, `employee_count_min: 50`).
 4.  **AI Parsing**: If Gemini evaluates the prompt successfully, it returns a structured JSON object containing filter dimensions (e.g., `entity_type: "company"`, `employee_count_min: 50`).
-5.  **Data Extraction**: The resulting JSON filters are passed into the dataset provider (`exploriumService`), which searches the database securely.
-6.  **Normalization**: Raw data from the enrichment database is passed through `normalizeService` to guarantee a consistent interface contract.
-7.  **Response**: Output is capped at 3 records max, returned via JSON, and rendered by the frontend into structured cards.
+5.  **Data Extraction**: The `exploriumService` fetches a paginated global dataset of raw entities.
+6.  **Deterministic Filtering**: A local `filterEngine` service acts on the raw dataset, applying heuristic matching and relevancy ranking based on Gemini's exact output constraints.
+7.  **Normalization & Truncation**: Raw data from the enrichment database is passed through `normalizeService` and strictly truncated to the top 3 highest-ranking records to guarantee a consistent interface contract.
+8.  **Response**: Output is returned via JSON, and rendered by the frontend into structured cards.
 
 ## API Contract
 
@@ -207,7 +206,7 @@ npm run dev
 3.  **Proactive Rate Limiting**: The Express middleware injects IP-based rate limiting on the `/api/enrich` route. This is a critical defense against distributed denial-of-service (DDoS) attacks and prevents malicious or runaway client scripts from exhausting the underlying LLM quotas and racking up API costs.
 4.  **Enforced JSON Constraints**: The Gemini prompt is engineered to demand absolute, raw JSON output without markdown wrapper formatting. This guarantees that the Node.js `JSON.parse()` pipeline executes predictably, preventing LLM conversational hallucination from crashing the endpoint logic.
 5.  **Mandatory Environment Variables**: All API keys, secrets, and environment-specific endpoints (like `PORT` and `FRONTEND_URL`) are strictly isolated behind `.env` files. This ensures that sensitive credentials are never committed to version control and allows for seamless CI/CD staging transitions.
-6.  **Production Validation**: The enrichment layer was validated against live Explorium endpoints and strictly conforms to their response schema (`response.data.data`).
+6.  **Production Validation**: The enrichment layer was validated against live Explorium endpoints (`response.data.data`). Because those specific `/v1/businesses` endpoints natively act as global fetchers without inline schema querying, filters are applied deterministically within the local backend service layer (`filterEngine`) against the enriched dataset results retrieved from Explorium.
 
 ## Limitations & Future Improvements
 
