@@ -60,7 +60,7 @@ The application is structured as a decoupled monorepo, separating a React-based 
 1.  **Input**: The user submits a natural language prompt via the client UI.
 2.  **Proxy**: The Next.js frontend sends an HTTP POST request to the Express backend (`/api/enrich`).
 3.  **NLP Parsing**: The backend makes an API call to Google Gemini. Gemini evaluates the user's intent and returns a structured JSON object containing filter dimensions (e.g., `entity_type: "company"`, `employee_count_min: 50`).
-4.  **Fallback Trap**: If Gemini is unreachable (DNS errors, timeouts) or throws an HTTP 429 Quota Exceeded error, the backend gracefully catches the failure and diverts the prompt to a local Regex-based fallback parser.
+4.  **AI Parsing**: If Gemini evaluates the prompt successfully, it returns a structured JSON object containing filter dimensions (e.g., `entity_type: "company"`, `employee_count_min: 50`).
 5.  **Data Extraction**: The resulting JSON filters are passed into the dataset provider (`exploriumService`), which searches the database securely.
 6.  **Normalization**: Raw data from the enrichment database is passed through `normalizeService` to guarantee a consistent interface contract.
 7.  **Response**: Output is capped at 3 records max, returned via JSON, and rendered by the frontend into structured cards.
@@ -110,7 +110,7 @@ Accepts a natural language query and returns enriched B2B data. **Note: A strict
 
 ## Environment Variables
 
-For the backend to function securely, all secrets are stored in a `.env` file and are **never** hardcoded into the repository. 
+For the backend to function securely, all secrets are stored in a `.env` file and are **never** committed into the repository. 
 
 Create a `.env` file in the `/backend` directory with the following variables:
 
@@ -122,7 +122,7 @@ FRONTEND_URL=http://localhost:3000
 # Google Gemini (NLP Parsing)
 GEMINI_API_KEY=your_google_studio_api_key_here
 
-# Explorium (Data Enrichment - Currently Mocked)
+# Explorium (Data Enrichment API)
 EXPLORIUM_API_KEY=your_explorium_api_key_here
 ```
 
@@ -207,6 +207,7 @@ npm run dev
 3.  **Proactive Rate Limiting**: The Express middleware injects IP-based rate limiting on the `/api/enrich` route. This is a critical defense against distributed denial-of-service (DDoS) attacks and prevents malicious or runaway client scripts from exhausting the underlying LLM quotas and racking up API costs.
 4.  **Enforced JSON Constraints**: The Gemini prompt is engineered to demand absolute, raw JSON output without markdown wrapper formatting. This guarantees that the Node.js `JSON.parse()` pipeline executes predictably, preventing LLM conversational hallucination from crashing the endpoint logic.
 5.  **Mandatory Environment Variables**: All API keys, secrets, and environment-specific endpoints (like `PORT` and `FRONTEND_URL`) are strictly isolated behind `.env` files. This ensures that sensitive credentials are never committed to version control and allows for seamless CI/CD staging transitions.
+6.  **Production Validation**: The enrichment layer was validated against live Explorium endpoints and strictly conforms to their response schema (`response.data.data`).
 
 ## Limitations & Future Improvements
 

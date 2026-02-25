@@ -12,12 +12,17 @@ async function fetchEnrichedData(entityType, filters) {
         const endpoint = entityType === 'prospect' ? 'prospects' : 'businesses';
         const EXPLORIUM_API_URL = `https://api.explorium.ai/v1/${endpoint}`;
 
-        // Construct exact payload requiring page, page_size, mode, and spreading the AI filters
+        // Explicit filter mapping layer to protect against LLM schema drift
         const requestBody = {
             mode: "full",
             page: 1,
             page_size: 3,
-            ...filters
+            filters: {
+                industries: filters.industry,
+                countries: filters.countries,
+                employee_count_min: filters.employee_count_min,
+                employee_count_max: filters.employee_count_max
+            }
         };
 
         // Make the strictly formatted API request
